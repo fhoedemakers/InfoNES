@@ -107,6 +107,9 @@ void Map5_Init()
   Map5_IRQ_Status = 0;
   Map5_IRQ_Line = 0;
 
+  /* Disable Frame IRQ - MMC5 has its own IRQ mechanism */
+  FrameIRQ_Enable = 0;
+
   /* Set up wiring of the interrupt pin */
   K6502_Set_Int_Wiring( 1, 1 ); 
 }
@@ -122,8 +125,8 @@ BYTE Map5_ReadApu( WORD wAddr )
   {
     case 0x5204:
       byRet = Map5_IRQ_Status;
-      Map5_IRQ_Status &= 0x40;  /* Clear pending flag, keep in-frame */
-      IRQ_State = IRQ_Wiring;   /* Deassert IRQ line */
+      Map5_IRQ_Status &= 0x40;
+      IRQ_State = IRQ_Wiring;
       break;
 
     case 0x5205:
@@ -349,6 +352,9 @@ void Map5_Write( WORD wAddr, BYTE byData )
 /*-------------------------------------------------------------------*/
 void Map5_HSync()
 {
+  /* MMC5 has its own IRQ; prevent APU frame IRQ from interfering */
+  FrameIRQ_Enable = 0;
+
   if ( PPU_Scanline < 240 && PPU_ScanTable[ PPU_Scanline ] == SCAN_ON_SCREEN )
   {
     /* In visible frame */
@@ -366,9 +372,8 @@ void Map5_HSync()
   }
   else if ( Map5_IRQ_Status & 0x40 )
   {
-    /* Transition out of visible frame: clear all status, deassert IRQ */
-    Map5_IRQ_Status = 0;
-    IRQ_State = IRQ_Wiring;
+    /* Transition out of visible frame: clear in-frame flag, keep pending */
+    Map5_IRQ_Status &= ~0x40;
   }
 }
 
