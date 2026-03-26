@@ -72,6 +72,9 @@ static inline void K6502_WriteW( WORD wAddr, WORD wData );
 // The state of the IRQ pin
 extern BYTE IRQ_State;
 
+// Wiring of the IRQ pin
+extern BYTE IRQ_Wiring;
+
 // The state of the NMI pin
 extern BYTE NMI_State;
 
