@@ -42,10 +42,10 @@ SDL_Surface *screen;
 
 /* For Sound Emulation */
 SDL_AudioSpec audio_spec;
-BYTE final_wave[2048];
-int waveptr;
-int wavflag;
-int wavdone;
+#define SOUND_BUF_SIZE 4096
+BYTE final_wave[SOUND_BUF_SIZE];
+volatile int wave_wpos;
+volatile int wave_rpos;
 
 /* Pad state */
 DWORD dwPad1;
@@ -611,11 +611,32 @@ void InfoNES_Wait(){}
 void InfoNES_SoundInit( void ){}
 
 void waveout(void *udat,BYTE *stream,int len){
-  if ( !wavdone )
+  int i;
+  int rpos = wave_rpos;
+  int wpos = wave_wpos;
+  int avail = (wpos - rpos + SOUND_BUF_SIZE) & (SOUND_BUF_SIZE - 1);
+
+  if ( avail >= len )
   {
-    /* we always expect that len is 1024 */
-    memcpy( stream, &final_wave[(wavflag - 1) << 10], len );
-    wavflag = 0; wavdone = 1;
+    for ( i = 0; i < len; i++ )
+    {
+      stream[i] = final_wave[(rpos + i) & (SOUND_BUF_SIZE - 1)];
+    }
+    wave_rpos = (rpos + len) & (SOUND_BUF_SIZE - 1);
+  }
+  else
+  {
+    /* Underrun: play what we have, then hold last sample value */
+    for ( i = 0; i < avail; i++ )
+    {
+      stream[i] = final_wave[(rpos + i) & (SOUND_BUF_SIZE - 1)];
+    }
+    BYTE last = avail > 0 ? stream[avail - 1] : 0;
+    for ( i = avail; i < len; i++ )
+    {
+      stream[i] = last;
+    }
+    wave_rpos = wpos;
   }
 }
 
@@ -633,7 +654,7 @@ int InfoNES_SoundOpen( int samples_per_sync, int sample_rate ){
     fprintf(stderr,"Can't Open SDL Audio\n");
     return -1;
   } 
-  waveptr = wavflag = 0; wavdone = 1;
+  wave_wpos = wave_rpos = 0;
   SDL_PauseAudio(0);
 	
   /* Successful */
@@ -651,20 +672,22 @@ void InfoNES_SoundOutput(int samples, BYTE *wave1, BYTE *wave2, BYTE *wave3, BYT
 
   for (i = 0; i < samples; i++)
   {
-    final_wave[waveptr] = 
-      ( wave1[i] + wave2[i] + wave3[i] + wave4[i] + wave5[i] ) / 5; 
+    int sample = ( wave1[i] + wave2[i] + wave3[i] + wave4[i] + wave5[i] ) / 5;
+    if ( ApuMmc5Enable )
+    {
+      /* Add MMC5 expansion audio on top of the APU mix */
+      sample += ( mmc5_wave_buffers[0][i] + mmc5_wave_buffers[1][i] + mmc5_wave_buffers[2][i] ) / 5;
+      if ( sample > 255 ) sample = 255;
+    }
 
-    waveptr++;
-    if ( waveptr == 2048 ) 
+    /* Wait if ring buffer is full (leave 1 slot empty to distinguish full from empty) */
+    int next = (wave_wpos + 1) & (SOUND_BUF_SIZE - 1);
+    while ( next == wave_rpos )
     {
-      waveptr = 0;
-      wavflag = 2; wavdone=0;
+      SDL_Delay(1);
     }
-    else if ( waveptr == 1024 )
-    {
-      wavflag = 1; wavdone=0;
-    }
-    while (!wavdone) SDL_Delay(0);
+    final_wave[wave_wpos] = (BYTE)sample;
+    wave_wpos = next;
   }
 }
 

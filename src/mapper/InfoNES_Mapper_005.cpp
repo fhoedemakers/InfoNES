@@ -110,6 +110,9 @@ void Map5_Init()
   /* Disable Frame IRQ - MMC5 has its own IRQ mechanism */
   FrameIRQ_Enable = 0;
 
+  /* Enable MMC5 expansion audio */
+  ApuMmc5Enable = 1;
+
   /* Set up wiring of the interrupt pin */
   K6502_Set_Int_Wiring( 1, 1 ); 
 }
@@ -135,6 +138,12 @@ BYTE Map5_ReadApu( WORD wAddr )
 
     case 0x5206:
       byRet = (BYTE)( ( ( Map5_Value0 * Map5_Value1 ) & 0xff00 ) >> 8 );
+      break;
+
+    case 0x5015:
+      byRet = 0;
+      if ( ApuMmc5P1Atl > 0 ) byRet |= 0x01;
+      if ( ApuMmc5P2Atl > 0 ) byRet |= 0x02;
       break;
 
     default:
@@ -281,7 +290,38 @@ void Map5_Apu( WORD wAddr, BYTE byData )
     default:
       if ( 0x5000 <= wAddr && wAddr <= 0x5015 )
       {
-        /* Extra Sound */
+        /* MMC5 Expansion Audio */
+        switch ( wAddr )
+        {
+          case 0x5000:
+            ApuWriteMmc5P1a( wAddr, byData );
+            break;
+          case 0x5002:
+            ApuWriteMmc5P1c( wAddr, byData );
+            break;
+          case 0x5003:
+            ApuWriteMmc5P1d( wAddr, byData );
+            break;
+          case 0x5004:
+            ApuWriteMmc5P2a( wAddr, byData );
+            break;
+          case 0x5006:
+            ApuWriteMmc5P2c( wAddr, byData );
+            break;
+          case 0x5007:
+            ApuWriteMmc5P2d( wAddr, byData );
+            break;
+          case 0x5011:
+            /* Raw PCM - writing 0 has no effect */
+            if ( byData != 0 )
+            {
+              ApuMmc5PcmValue = byData;
+            }
+            break;
+          case 0x5015:
+            ApuWriteMmc5Ctrl( wAddr, byData );
+            break;
+        }
       } else 
       if ( 0x5c00 <= wAddr && wAddr <= 0x5fff )
       {
