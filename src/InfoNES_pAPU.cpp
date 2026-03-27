@@ -205,7 +205,6 @@ int   ApuC5DmaLength, ApuC5CacheDmaLength;
 /*  MMC5 Audio resources                                             */
 /*-------------------------------------------------------------------*/
 BYTE ApuMmc5Enable = 0;
-BYTE mmc5_wave_buffers[3][735];
 
 /* MMC5 Pulse 1 */
 BYTE ApuMmc5P1a, ApuMmc5P1c, ApuMmc5P1d;

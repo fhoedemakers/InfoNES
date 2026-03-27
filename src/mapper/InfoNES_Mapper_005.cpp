@@ -5,6 +5,7 @@
 /*===================================================================*/
 
 BYTE Map5_Wram[ 0x2000 * 8 ];
+BYTE mmc5_wave_buffers[3][735];
 BYTE Map5_Ex_Ram[ 0x400 ]; 
 BYTE Map5_Ex_Vram[ 0x400 ];
 BYTE Map5_Ex_Nam[ 0x400 ];
