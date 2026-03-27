@@ -1227,6 +1227,14 @@ void InfoNES_pAPUVsync(void)
       mmc5_wave_buffers[2][i] = ApuMmc5PcmValue;
     }
     ApuMmc5Ctrl = ApuMmc5CtrlNew;
+
+    /* Mix MMC5 expansion audio into APU wave buffers */
+    for ( unsigned int i = 0; i < ApuSamplesPerSync; i++ )
+    {
+      int mmc5_mix = ( mmc5_wave_buffers[0][i] + mmc5_wave_buffers[1][i] + mmc5_wave_buffers[2][i] ) / 3;
+      int combined = wave_buffers[0][i] + mmc5_mix;
+      wave_buffers[0][i] = ( combined > 255 ) ? 255 : combined;
+    }
   }
     
   ApuCtrl = ApuCtrlNew;

@@ -672,13 +672,8 @@ void InfoNES_SoundOutput(int samples, BYTE *wave1, BYTE *wave2, BYTE *wave3, BYT
 
   for (i = 0; i < samples; i++)
   {
-    int sample = ( wave1[i] + wave2[i] + wave3[i] + wave4[i] + wave5[i] ) / 5;
-    if ( ApuMmc5Enable )
-    {
-      /* Add MMC5 expansion audio on top of the APU mix */
-      sample += ( mmc5_wave_buffers[0][i] + mmc5_wave_buffers[1][i] + mmc5_wave_buffers[2][i] ) / 5;
-      if ( sample > 255 ) sample = 255;
-    }
+    final_wave[wave_wpos] = 
+      ( wave1[i] + wave2[i] + wave3[i] + wave4[i] + wave5[i] ) / 5;
 
     /* Wait if ring buffer is full (leave 1 slot empty to distinguish full from empty) */
     int next = (wave_wpos + 1) & (SOUND_BUF_SIZE - 1);
@@ -686,7 +681,6 @@ void InfoNES_SoundOutput(int samples, BYTE *wave1, BYTE *wave2, BYTE *wave3, BYT
     {
       SDL_Delay(1);
     }
-    final_wave[wave_wpos] = (BYTE)sample;
     wave_wpos = next;
   }
 }
