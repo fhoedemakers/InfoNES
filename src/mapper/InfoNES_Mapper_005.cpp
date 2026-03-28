@@ -5,6 +5,7 @@
 /*===================================================================*/
 
 BYTE Map5_Wram[ 0x2000 * 8 ];
+BYTE mmc5_wave_buffers[3][735];
 BYTE Map5_Ex_Ram[ 0x400 ]; 
 BYTE Map5_Ex_Vram[ 0x400 ];
 BYTE Map5_Ex_Nam[ 0x400 ];
@@ -26,6 +27,10 @@ BYTE Map5_Prg_Size;
 BYTE Map5_Chr_Size;
 BYTE Map5_Gfx_Mode;
 
+/* Forward declarations */
+void Map5_Sram( WORD wAddr, BYTE byData );
+void Map5_Sync_Prg_Banks( void );
+
 /*-------------------------------------------------------------------*/
 /*  Initialize Mapper 5                                              */
 /*-------------------------------------------------------------------*/
@@ -40,7 +45,7 @@ void Map5_Init()
   MapperWrite = Map5_Write;
 
   /* Write to SRAM */
-  MapperSram = Map0_Sram;
+  MapperSram = Map5_Sram;
 
   /* Write to APU */
   MapperApu = Map5_Apu;
@@ -103,6 +108,12 @@ void Map5_Init()
   Map5_IRQ_Status = 0;
   Map5_IRQ_Line = 0;
 
+  /* Disable Frame IRQ - MMC5 has its own IRQ mechanism */
+  FrameIRQ_Enable = 0;
+
+  /* Enable MMC5 expansion audio */
+  ApuMmc5Enable = 1;
+
   /* Set up wiring of the interrupt pin */
   K6502_Set_Int_Wiring( 1, 1 ); 
 }
@@ -118,7 +129,8 @@ BYTE Map5_ReadApu( WORD wAddr )
   {
     case 0x5204:
       byRet = Map5_IRQ_Status;
-      Map5_IRQ_Status = 0;
+      Map5_IRQ_Status &= 0x40;
+      IRQ_State = IRQ_Wiring;
       break;
 
     case 0x5205:
@@ -127,6 +139,12 @@ BYTE Map5_ReadApu( WORD wAddr )
 
     case 0x5206:
       byRet = (BYTE)( ( ( Map5_Value0 * Map5_Value1 ) & 0xff00 ) >> 8 );
+      break;
+
+    case 0x5015:
+      byRet = 0;
+      if ( ApuMmc5P1Atl > 0 ) byRet |= 0x01;
+      if ( ApuMmc5P2Atl > 0 ) byRet |= 0x02;
       break;
 
     default:
@@ -234,7 +252,6 @@ void Map5_Apu( WORD wAddr, BYTE byData )
     case 0x5126:
     case 0x5127:
       Map5_Chr_Reg[ wAddr & 0x07 ][ 0 ] = byData;
-      Map5_Sync_Prg_Banks();
       break;
 
     case 0x5128:
@@ -252,16 +269,15 @@ void Map5_Apu( WORD wAddr, BYTE byData )
       break;
 
     case 0x5203:
-      if ( Map5_IRQ_Line >= 0x40 )
-      {
-        Map5_IRQ_Line = byData;
-      } else {
-        Map5_IRQ_Line += byData;
-      }
+      Map5_IRQ_Line = byData;
       break;
 
     case 0x5204:
-      Map5_IRQ_Enable = byData;
+      Map5_IRQ_Enable = byData & 0x80;
+      if ( Map5_IRQ_Enable && ( Map5_IRQ_Status & 0x80 ) )
+      {
+        IRQ_REQ;
+      }
       break;
 
     case 0x5205:
@@ -275,13 +291,45 @@ void Map5_Apu( WORD wAddr, BYTE byData )
     default:
       if ( 0x5000 <= wAddr && wAddr <= 0x5015 )
       {
-        /* Extra Sound */
+        /* MMC5 Expansion Audio */
+        switch ( wAddr )
+        {
+          case 0x5000:
+            ApuWriteMmc5P1a( wAddr, byData );
+            break;
+          case 0x5002:
+            ApuWriteMmc5P1c( wAddr, byData );
+            break;
+          case 0x5003:
+            ApuWriteMmc5P1d( wAddr, byData );
+            break;
+          case 0x5004:
+            ApuWriteMmc5P2a( wAddr, byData );
+            break;
+          case 0x5006:
+            ApuWriteMmc5P2c( wAddr, byData );
+            break;
+          case 0x5007:
+            ApuWriteMmc5P2d( wAddr, byData );
+            break;
+          case 0x5011:
+            /* Raw PCM - writing 0 has no effect */
+            if ( byData != 0 )
+            {
+              ApuMmc5PcmValue = byData;
+            }
+            break;
+          case 0x5015:
+            ApuWriteMmc5Ctrl( wAddr, byData );
+            break;
+        }
       } else 
       if ( 0x5c00 <= wAddr && wAddr <= 0x5fff )
       {
         switch ( Map5_Gfx_Mode )
         {
           case 0:
+          case 1:
             Map5_Ex_Vram[ wAddr - 0x5c00 ] = byData;
             break;
           case 2:
@@ -345,23 +393,28 @@ void Map5_Write( WORD wAddr, BYTE byData )
 /*-------------------------------------------------------------------*/
 void Map5_HSync()
 {
-  if ( PPU_Scanline <= 240 )
+  /* MMC5 has its own IRQ; prevent APU frame IRQ from interfering */
+  FrameIRQ_Enable = 0;
+
+  if ( PPU_Scanline < 240 && PPU_ScanTable[ PPU_Scanline ] == SCAN_ON_SCREEN )
   {
-    if ( PPU_Scanline == Map5_IRQ_Line )
+    /* In visible frame */
+    Map5_IRQ_Status |= 0x40;
+
+    if ( Map5_IRQ_Line != 0 && PPU_Scanline == Map5_IRQ_Line )
     {
       Map5_IRQ_Status |= 0x80;
 
-      if ( Map5_IRQ_Enable && Map5_IRQ_Line < 0xf0 )
+      if ( Map5_IRQ_Enable )
       {
         IRQ_REQ;
       }
-      if ( Map5_IRQ_Line >= 0x40 )
-      {
-        Map5_IRQ_Enable = 0;
-      }
     }
-  } else {
-    Map5_IRQ_Status |= 0x40;
+  }
+  else if ( Map5_IRQ_Status & 0x40 )
+  {
+    /* Transition out of visible frame: clear in-frame flag, keep pending */
+    Map5_IRQ_Status &= ~0x40;
   }
 }
 
@@ -466,8 +519,8 @@ void Map5_Sync_Prg_Banks( void )
       {
         Map5_Wram_Reg[ 4 ] = 0xff;
         Map5_Wram_Reg[ 5 ] = 0xff;
-        ROMBANK0 = ROMPAGE( ( (Map5_Prg_Reg[7] & 0x7e) + 0 ) % ( NesHeader.byRomSize << 1 ) );
-        ROMBANK1 = ROMPAGE( ( (Map5_Prg_Reg[7] & 0x7e) + 1 ) % ( NesHeader.byRomSize << 1 ) );
+        ROMBANK0 = ROMPAGE( ( (Map5_Prg_Reg[5] & 0x7e) + 0 ) % ( NesHeader.byRomSize << 1 ) );
+        ROMBANK1 = ROMPAGE( ( (Map5_Prg_Reg[5] & 0x7e) + 1 ) % ( NesHeader.byRomSize << 1 ) );
       } else {
         Map5_Wram_Reg[ 4 ] = ( Map5_Prg_Reg[ 5 ] & 0x06 ) + 0;
         Map5_Wram_Reg[ 5 ] = ( Map5_Prg_Reg[ 5 ] & 0x06 ) + 1;
