@@ -4,6 +4,8 @@
 /*                                                                   */
 /*===================================================================*/
 
+#include <stdlib.h>
+
 BYTE Map5_Wram[ 0x2000 * 8 ];
 BYTE mmc5_wave_buffers[3][735];
 BYTE Map5_Ex_Ram[ 0x400 ]; 
@@ -27,9 +29,60 @@ BYTE Map5_Prg_Size;
 BYTE Map5_Chr_Size;
 BYTE Map5_Gfx_Mode;
 
+/* Pre-decoded full VROM for ExRAM extended attribute mode (mode 1) */
+BYTE *Map5_FullChrBuf = NULL;
+int Map5_FullChrBufSize = 0;
+
 /* Forward declarations */
 void Map5_Sram( WORD wAddr, BYTE byData );
 void Map5_Sync_Prg_Banks( void );
+
+/*-------------------------------------------------------------------*/
+/*  Map5_PreDecodeChr() : Pre-decode all VROM for ExRAM mode 1       */
+/*-------------------------------------------------------------------*/
+void Map5_PreDecodeChr()
+{
+  if ( NesHeader.byVRomSize == 0 )
+    return;
+
+  int totalTiles = NesHeader.byVRomSize * 0x2000 / 16;  /* 16 bytes per NES tile */
+  Map5_FullChrBufSize = totalTiles * 64;  /* 64 decoded bytes per tile */
+
+  /* Free previous buffer if exists */
+  if ( Map5_FullChrBuf != NULL )
+  {
+    free( Map5_FullChrBuf );
+    Map5_FullChrBuf = NULL;
+  }
+
+  Map5_FullChrBuf = (BYTE *)malloc( Map5_FullChrBufSize );
+  if ( Map5_FullChrBuf == NULL )
+    return;
+
+  /* Decode every tile in VROM into pixel format */
+  for ( int t = 0; t < totalTiles; t++ )
+  {
+    BYTE *pTile = VROM + t * 16;
+    int nOff = t * 64;
+
+    for ( int nY = 0; nY < 8; nY++ )
+    {
+      BYTE byData1 = ( ( pTile[ nY ] >> 1 ) & 0x55 ) | ( pTile[ nY + 8 ] & 0xAA );
+      BYTE byData2 = ( pTile[ nY ] & 0x55 ) | ( ( pTile[ nY + 8 ] << 1 ) & 0xAA );
+
+      Map5_FullChrBuf[ nOff ]     = ( byData1 >> 6 ) & 3;
+      Map5_FullChrBuf[ nOff + 1 ] = ( byData2 >> 6 ) & 3;
+      Map5_FullChrBuf[ nOff + 2 ] = ( byData1 >> 4 ) & 3;
+      Map5_FullChrBuf[ nOff + 3 ] = ( byData2 >> 4 ) & 3;
+      Map5_FullChrBuf[ nOff + 4 ] = ( byData1 >> 2 ) & 3;
+      Map5_FullChrBuf[ nOff + 5 ] = ( byData2 >> 2 ) & 3;
+      Map5_FullChrBuf[ nOff + 6 ] = byData1 & 3;
+      Map5_FullChrBuf[ nOff + 7 ] = byData2 & 3;
+
+      nOff += 8;
+    }
+  }
+}
 
 /*-------------------------------------------------------------------*/
 /*  Initialize Mapper 5                                              */
@@ -116,6 +169,9 @@ void Map5_Init()
 
   /* Set up wiring of the interrupt pin */
   K6502_Set_Int_Wiring( 1, 1 ); 
+
+  /* Pre-decode full VROM for ExRAM extended attribute mode */
+  Map5_PreDecodeChr();
 }
 
 /*-------------------------------------------------------------------*/

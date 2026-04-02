@@ -258,24 +258,16 @@ static inline void K6502_Write( WORD wAddr, BYTE byData )
           // Set Scroll Register
           if ( PPU_Latch_Flag )
           {
-            // V-Scroll Register
-            PPU_Scr_V_Next = ( byData > 239 ) ? byData - 240 : byData;	    
-	    if ( byData > 239 ) PPU_NameTableBank ^= NAME_TABLE_V_MASK; 
-            PPU_Scr_V_Byte_Next = PPU_Scr_V_Next >> 3;
-            PPU_Scr_V_Bit_Next = PPU_Scr_V_Next & 7;
-
-            // Added : more Loopy Stuff
+            // V-Scroll Register (Loopy: coarse Y and fine Y into PPU_Temp)
 	    PPU_Temp = ( PPU_Temp & 0xFC1F ) | ( ( ( (WORD)byData ) & 0xF8 ) << 2);
 	    PPU_Temp = ( PPU_Temp & 0x8FFF ) | ( ( ( (WORD)byData ) & 0x07 ) << 12);
           }
           else
           {
-            // H-Scroll Register
-            PPU_Scr_H_Next = byData;
-            PPU_Scr_H_Byte_Next = PPU_Scr_H_Next >> 3;
-            PPU_Scr_H_Bit_Next = PPU_Scr_H_Next & 7;
+            // H-Scroll Register (fine X is latched immediately)
+            PPU_Scr_H_Bit = byData & 7;
 
-            // Added : more Loopy Stuff
+            // Loopy: coarse X into PPU_Temp
 	    PPU_Temp = ( PPU_Temp & 0xFFE0 ) | ( ( ( (WORD)byData ) & 0xF8 ) >> 3 );
           }
           PPU_Latch_Flag ^= 1;
@@ -286,25 +278,13 @@ static inline void K6502_Write( WORD wAddr, BYTE byData )
           if ( PPU_Latch_Flag )
           {
             /* Low */
-#if 0
-            PPU_Addr = ( PPU_Addr & 0xff00 ) | ( (WORD)byData );
-#else
             PPU_Temp = ( PPU_Temp & 0xFF00 ) | ( ( (WORD)byData ) & 0x00FF);
 	    PPU_Addr = PPU_Temp;
-#endif
-	    if ( !( PPU_R2 & R2_IN_VBLANK ) ) {
-	      InfoNES_SetupScr();
-	    }
           }
           else
           {
             /* High */
-#if 0
-            PPU_Addr = ( PPU_Addr & 0x00ff ) | ( (WORD)( byData & 0x3f ) << 8 );
-            InfoNES_SetupScr();
-#else
             PPU_Temp = ( PPU_Temp & 0x00FF ) | ( ( ((WORD)byData) & 0x003F ) << 8 );
-#endif            
           }
           PPU_Latch_Flag ^= 1;
           break;

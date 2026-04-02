@@ -662,6 +662,12 @@ int InfoNES_HSync()
  */
 
   /*-------------------------------------------------------------------*/
+  /*  Derive scroll from PPU_Addr (Loopy mechanism)                    */
+  /*-------------------------------------------------------------------*/
+  PPU_Scr_H_Byte = PPU_Addr & 31;
+  PPU_NameTableBank = NAME_TABLE0 + ( ( PPU_Addr >> 10 ) & 3 );
+
+  /*-------------------------------------------------------------------*/
   /*  Render a scanline                                                */
   /*-------------------------------------------------------------------*/
   if ( FrameCnt == 0 &&
@@ -671,15 +677,38 @@ int InfoNES_HSync()
   }
 
   /*-------------------------------------------------------------------*/
-  /*  Set new scroll values                                            */
+  /*  Loopy PPU_Addr scroll update                                     */
   /*-------------------------------------------------------------------*/
-  PPU_Scr_V      = PPU_Scr_V_Next;
-  PPU_Scr_V_Byte = PPU_Scr_V_Byte_Next;
-  PPU_Scr_V_Bit  = PPU_Scr_V_Bit_Next;
+  if ( ( PPU_R1 & R1_SHOW_SP ) || ( PPU_R1 & R1_SHOW_SCR ) )
+  {
+    if ( PPU_Scanline == SCAN_VBLANK_END )
+    {
+      PPU_Addr = PPU_Temp;
+    }
+    else if ( PPU_Scanline < SCAN_UNKNOWN_START )
+    {
+      /* Reload horizontal bits from PPU_Temp */
+      PPU_Addr = ( PPU_Addr & ~0x041F ) | ( PPU_Temp & 0x041F );
 
-  PPU_Scr_H      = PPU_Scr_H_Next;
-  PPU_Scr_H_Byte = PPU_Scr_H_Byte_Next;
-  PPU_Scr_H_Bit  = PPU_Scr_H_Bit_Next;
+      /* Fine Y increment */
+      int v = ( PPU_Addr >> 12 ) | ( ( PPU_Addr >> 2 ) & ( 31 << 3 ) );
+      if ( v == 29 * 8 + 7 )
+      {
+        v = 0;
+        PPU_Addr ^= 0x800;
+      }
+      else if ( v == 31 * 8 + 7 )
+      {
+        v = 0;
+      }
+      else
+      {
+        ++v;
+      }
+      PPU_Addr = ( PPU_Addr & ~0x73E0 ) |
+                 ( ( v & 7 ) << 12 ) | ( ( ( v >> 3 ) & 31 ) << 5 );
+    }
+  }
 
   /*-------------------------------------------------------------------*/
   /*  Next Scanline                                                    */
@@ -722,10 +751,7 @@ int InfoNES_HSync()
       FrameCnt = ( FrameCnt >= FrameSkip ) ? 0 : FrameCnt + 1;
 
       // Set a V-Blank flag
-      PPU_R2 = R2_IN_VBLANK;
-
-      // Reset latch flag
-      PPU_Latch_Flag = 0;
+      PPU_R2 |= R2_IN_VBLANK;
 
       // pAPU Sound function in V-Sync
       if ( !APU_Mute )
@@ -781,6 +807,8 @@ void InfoNES_DrawLine()
   int nSprData;
   BYTE bySprCol;
   BYTE pSprBuf[ NES_DISP_WIDTH + 7 ];
+  int bExAttrMode;
+  int nNumBanks4k;
 
   /*-------------------------------------------------------------------*/
   /*  Render Background                                                */
@@ -788,6 +816,10 @@ void InfoNES_DrawLine()
 
   /* MMC5 VROM switch */
   MapperRenderScreen( 1 );
+
+  /* Check for MMC5 ExRAM extended attribute mode */
+  bExAttrMode = ( MapperNo == 5 && Map5_Gfx_Mode == 1 && Map5_FullChrBuf != NULL && NesHeader.byVRomSize > 0 );
+  nNumBanks4k = NesHeader.byVRomSize * 2;
 
   // Pointer to the render position
   pPoint = &WorkFrame[ PPU_Scanline * NES_DISP_WIDTH ];
@@ -801,16 +833,9 @@ void InfoNES_DrawLine()
   {
     nNameTable = PPU_NameTableBank;
 
-    nY = PPU_Scr_V_Byte + ( PPU_Scanline >> 3 );
-
-    nYBit = PPU_Scr_V_Bit + ( PPU_Scanline & 7 );
-
-    if ( nYBit > 7 )
-    {
-      ++nY;
-      nYBit &= 7;
-    }
-    nYBit <<= 3;
+    /* Derive vertical scroll from PPU_Addr (Loopy) */
+    nY = ( PPU_Addr >> 5 ) & 31;
+    nYBit = ( ( PPU_Addr >> 12 ) & 7 ) << 3;
 
     if ( nY > 29 )
     {
@@ -828,9 +853,19 @@ void InfoNES_DrawLine()
     /*-------------------------------------------------------------------*/
 
     pbyNameTable = PPUBANK[ nNameTable ] + nY * 32 + nX;
-    pbyChrData = PPU_BG_Base + ( *pbyNameTable << 6 ) + nYBit;
     pAttrBase = PPUBANK[ nNameTable ] + 0x3c0 + ( nY / 4 ) * 8;
-    pPalTbl =  &PalTable[ ( ( ( pAttrBase[ nX >> 2 ] >> ( ( nX & 2 ) + nY4 ) ) & 3 ) << 2 ) ];
+    if ( bExAttrMode )
+    {
+      BYTE exByte = Map5_Ex_Vram[ nY * 32 + nX ];
+      int chrBank4k = ( exByte & 0x3F ) % nNumBanks4k;
+      pbyChrData = Map5_FullChrBuf + ( chrBank4k * 256 + *pbyNameTable ) * 64 + nYBit;
+      pPalTbl = &PalTable[ ( ( exByte >> 6 ) & 3 ) << 2 ];
+    }
+    else
+    {
+      pbyChrData = PPU_BG_Base + ( *pbyNameTable << 6 ) + nYBit;
+      pPalTbl =  &PalTable[ ( ( ( pAttrBase[ nX >> 2 ] >> ( ( nX & 2 ) + nY4 ) ) & 3 ) << 2 ) ];
+    }
 
     for ( nIdx = PPU_Scr_H_Bit; nIdx < 8; ++nIdx )
     {
@@ -849,8 +884,18 @@ void InfoNES_DrawLine()
 
     for ( ; nX < 32; ++nX )
     {
-      pbyChrData = PPU_BG_Base + ( *pbyNameTable << 6 ) + nYBit;
-      pPalTbl = &PalTable[ ( ( ( pAttrBase[ nX >> 2 ] >> ( ( nX & 2 ) + nY4 ) ) & 3 ) << 2 ) ];
+      if ( bExAttrMode )
+      {
+        BYTE exByte = Map5_Ex_Vram[ nY * 32 + nX ];
+        int chrBank4k = ( exByte & 0x3F ) % nNumBanks4k;
+        pbyChrData = Map5_FullChrBuf + ( chrBank4k * 256 + *pbyNameTable ) * 64 + nYBit;
+        pPalTbl = &PalTable[ ( ( exByte >> 6 ) & 3 ) << 2 ];
+      }
+      else
+      {
+        pbyChrData = PPU_BG_Base + ( *pbyNameTable << 6 ) + nYBit;
+        pPalTbl = &PalTable[ ( ( ( pAttrBase[ nX >> 2 ] >> ( ( nX & 2 ) + nY4 ) ) & 3 ) << 2 ) ];
+      }
 
       pPoint[ 0 ] = pPalTbl[ pbyChrData[ 0 ] ]; 
       pPoint[ 1 ] = pPalTbl[ pbyChrData[ 1 ] ];
@@ -880,8 +925,18 @@ void InfoNES_DrawLine()
 
     for ( nX = 0; nX < PPU_Scr_H_Byte; ++nX )
     {
-      pbyChrData = PPU_BG_Base + ( *pbyNameTable << 6 ) + nYBit;
-      pPalTbl = &PalTable[ ( ( ( pAttrBase[ nX >> 2 ] >> ( ( nX & 2 ) + nY4 ) ) & 3 ) << 2 ) ];
+      if ( bExAttrMode )
+      {
+        BYTE exByte = Map5_Ex_Vram[ nY * 32 + nX ];
+        int chrBank4k = ( exByte & 0x3F ) % nNumBanks4k;
+        pbyChrData = Map5_FullChrBuf + ( chrBank4k * 256 + *pbyNameTable ) * 64 + nYBit;
+        pPalTbl = &PalTable[ ( ( exByte >> 6 ) & 3 ) << 2 ];
+      }
+      else
+      {
+        pbyChrData = PPU_BG_Base + ( *pbyNameTable << 6 ) + nYBit;
+        pPalTbl = &PalTable[ ( ( ( pAttrBase[ nX >> 2 ] >> ( ( nX & 2 ) + nY4 ) ) & 3 ) << 2 ) ];
+      }
 
       pPoint[ 0 ] = pPalTbl[ pbyChrData[ 0 ] ]; 
       pPoint[ 1 ] = pPalTbl[ pbyChrData[ 1 ] ];
@@ -903,8 +958,18 @@ void InfoNES_DrawLine()
     /*  Rendering of the block of the right end                          */
     /*-------------------------------------------------------------------*/
 
-    pbyChrData = PPU_BG_Base + ( *pbyNameTable << 6 ) + nYBit;
-    pPalTbl = &PalTable[ ( ( ( pAttrBase[ nX >> 2 ] >> ( ( nX & 2 ) + nY4 ) ) & 3 ) << 2 ) ];
+    if ( bExAttrMode )
+    {
+      BYTE exByte = Map5_Ex_Vram[ nY * 32 + nX ];
+      int chrBank4k = ( exByte & 0x3F ) % nNumBanks4k;
+      pbyChrData = Map5_FullChrBuf + ( chrBank4k * 256 + *pbyNameTable ) * 64 + nYBit;
+      pPalTbl = &PalTable[ ( ( exByte >> 6 ) & 3 ) << 2 ];
+    }
+    else
+    {
+      pbyChrData = PPU_BG_Base + ( *pbyNameTable << 6 ) + nYBit;
+      pPalTbl = &PalTable[ ( ( ( pAttrBase[ nX >> 2 ] >> ( ( nX & 2 ) + nY4 ) ) & 3 ) << 2 ) ];
+    }
     for ( nIdx = 0; nIdx < PPU_Scr_H_Bit; ++nIdx )
     {
       pPoint[ nIdx ] = pPalTbl[ pbyChrData[ nIdx ] ];

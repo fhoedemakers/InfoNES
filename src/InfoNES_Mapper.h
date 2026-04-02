@@ -51,6 +51,11 @@ extern BYTE DRAM[];
 
 /* The address of 8Kbytes unit of the Map5 ROM */
 #define Map5_ROMPAGE(a)     &Map5_Wram[ ( (a) & 0x07 ) * 0x2000 ]
+
+/* Mapper 5 ExRAM extended attribute support */
+extern BYTE Map5_Ex_Vram[];
+extern BYTE Map5_Gfx_Mode;
+extern BYTE *Map5_FullChrBuf;
 /* The address of 1Kbytes unit of the Map6 Chr RAM */
 #define Map6_VROMPAGE(a)    &Map6_Chr_Ram[ (a) * 0x400 ]
 /* The address of 1Kbytes unit of the Map19 Chr RAM */

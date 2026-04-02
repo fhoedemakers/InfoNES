@@ -134,23 +134,14 @@ extern BYTE PPU_UpDown_Clip;
 #define SCAN_ON_SCREEN_START            8
 #define SCAN_BOTTOM_OFF_SCREEN_START  232
 #define SCAN_UNKNOWN_START            240
-#define SCAN_VBLANK_START             243
-#define SCAN_VBLANK_END               262
+#define SCAN_VBLANK_START             241
+#define SCAN_VBLANK_END               261
 
-#define STEP_PER_SCANLINE             113
-#define STEP_PER_FRAME                29828
+#define STEP_PER_SCANLINE             114
+#define STEP_PER_FRAME                29780
 
 /* Develop Scroll Registers */
-#define InfoNES_SetupScr() \
-{ \
-  /* V-Scroll Register */ \
-  /* PPU_Scr_V_Byte_Next = ( BYTE )( ( PPU_Addr & 0x03e0 ) >> 5 ); */ \
-  /* PPU_Scr_V_Bit_Next = ( BYTE )( ( PPU_Addr & 0x7000 ) >> 12 ); */ \
-  /* H-Scroll Register */ \
-  /* PPU_Scr_H_Byte_Next = ( BYTE )( PPU_Addr & 0x001f ); */ \
-  /* NameTableBank */ \
-  PPU_NameTableBank = NAME_TABLE0 + ( ( PPU_Addr & 0x0C00 ) >> 10 ); \
-}
+#define InfoNES_SetupScr()
 
 /* Current Scanline */
 extern WORD PPU_Scanline;
