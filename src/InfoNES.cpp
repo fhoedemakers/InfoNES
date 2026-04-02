@@ -781,6 +781,8 @@ void InfoNES_DrawLine()
   int nSprData;
   BYTE bySprCol;
   BYTE pSprBuf[ NES_DISP_WIDTH + 7 ];
+  int bExAttrMode;
+  int nNumBanks4k;
 
   /*-------------------------------------------------------------------*/
   /*  Render Background                                                */
@@ -788,6 +790,10 @@ void InfoNES_DrawLine()
 
   /* MMC5 VROM switch */
   MapperRenderScreen( 1 );
+
+  /* Check for MMC5 ExRAM extended attribute mode */
+  bExAttrMode = ( MapperNo == 5 && Map5_Gfx_Mode == 1 && Map5_FullChrBuf != NULL && NesHeader.byVRomSize > 0 );
+  nNumBanks4k = NesHeader.byVRomSize * 2;
 
   // Pointer to the render position
   pPoint = &WorkFrame[ PPU_Scanline * NES_DISP_WIDTH ];
@@ -828,9 +834,19 @@ void InfoNES_DrawLine()
     /*-------------------------------------------------------------------*/
 
     pbyNameTable = PPUBANK[ nNameTable ] + nY * 32 + nX;
-    pbyChrData = PPU_BG_Base + ( *pbyNameTable << 6 ) + nYBit;
     pAttrBase = PPUBANK[ nNameTable ] + 0x3c0 + ( nY / 4 ) * 8;
-    pPalTbl =  &PalTable[ ( ( ( pAttrBase[ nX >> 2 ] >> ( ( nX & 2 ) + nY4 ) ) & 3 ) << 2 ) ];
+    if ( bExAttrMode )
+    {
+      BYTE exByte = Map5_Ex_Vram[ nY * 32 + nX ];
+      int chrBank4k = ( exByte & 0x3F ) % nNumBanks4k;
+      pbyChrData = Map5_FullChrBuf + ( chrBank4k * 256 + *pbyNameTable ) * 64 + nYBit;
+      pPalTbl = &PalTable[ ( ( exByte >> 6 ) & 3 ) << 2 ];
+    }
+    else
+    {
+      pbyChrData = PPU_BG_Base + ( *pbyNameTable << 6 ) + nYBit;
+      pPalTbl =  &PalTable[ ( ( ( pAttrBase[ nX >> 2 ] >> ( ( nX & 2 ) + nY4 ) ) & 3 ) << 2 ) ];
+    }
 
     for ( nIdx = PPU_Scr_H_Bit; nIdx < 8; ++nIdx )
     {
@@ -849,8 +865,18 @@ void InfoNES_DrawLine()
 
     for ( ; nX < 32; ++nX )
     {
-      pbyChrData = PPU_BG_Base + ( *pbyNameTable << 6 ) + nYBit;
-      pPalTbl = &PalTable[ ( ( ( pAttrBase[ nX >> 2 ] >> ( ( nX & 2 ) + nY4 ) ) & 3 ) << 2 ) ];
+      if ( bExAttrMode )
+      {
+        BYTE exByte = Map5_Ex_Vram[ nY * 32 + nX ];
+        int chrBank4k = ( exByte & 0x3F ) % nNumBanks4k;
+        pbyChrData = Map5_FullChrBuf + ( chrBank4k * 256 + *pbyNameTable ) * 64 + nYBit;
+        pPalTbl = &PalTable[ ( ( exByte >> 6 ) & 3 ) << 2 ];
+      }
+      else
+      {
+        pbyChrData = PPU_BG_Base + ( *pbyNameTable << 6 ) + nYBit;
+        pPalTbl = &PalTable[ ( ( ( pAttrBase[ nX >> 2 ] >> ( ( nX & 2 ) + nY4 ) ) & 3 ) << 2 ) ];
+      }
 
       pPoint[ 0 ] = pPalTbl[ pbyChrData[ 0 ] ]; 
       pPoint[ 1 ] = pPalTbl[ pbyChrData[ 1 ] ];
@@ -880,8 +906,18 @@ void InfoNES_DrawLine()
 
     for ( nX = 0; nX < PPU_Scr_H_Byte; ++nX )
     {
-      pbyChrData = PPU_BG_Base + ( *pbyNameTable << 6 ) + nYBit;
-      pPalTbl = &PalTable[ ( ( ( pAttrBase[ nX >> 2 ] >> ( ( nX & 2 ) + nY4 ) ) & 3 ) << 2 ) ];
+      if ( bExAttrMode )
+      {
+        BYTE exByte = Map5_Ex_Vram[ nY * 32 + nX ];
+        int chrBank4k = ( exByte & 0x3F ) % nNumBanks4k;
+        pbyChrData = Map5_FullChrBuf + ( chrBank4k * 256 + *pbyNameTable ) * 64 + nYBit;
+        pPalTbl = &PalTable[ ( ( exByte >> 6 ) & 3 ) << 2 ];
+      }
+      else
+      {
+        pbyChrData = PPU_BG_Base + ( *pbyNameTable << 6 ) + nYBit;
+        pPalTbl = &PalTable[ ( ( ( pAttrBase[ nX >> 2 ] >> ( ( nX & 2 ) + nY4 ) ) & 3 ) << 2 ) ];
+      }
 
       pPoint[ 0 ] = pPalTbl[ pbyChrData[ 0 ] ]; 
       pPoint[ 1 ] = pPalTbl[ pbyChrData[ 1 ] ];
@@ -903,8 +939,18 @@ void InfoNES_DrawLine()
     /*  Rendering of the block of the right end                          */
     /*-------------------------------------------------------------------*/
 
-    pbyChrData = PPU_BG_Base + ( *pbyNameTable << 6 ) + nYBit;
-    pPalTbl = &PalTable[ ( ( ( pAttrBase[ nX >> 2 ] >> ( ( nX & 2 ) + nY4 ) ) & 3 ) << 2 ) ];
+    if ( bExAttrMode )
+    {
+      BYTE exByte = Map5_Ex_Vram[ nY * 32 + nX ];
+      int chrBank4k = ( exByte & 0x3F ) % nNumBanks4k;
+      pbyChrData = Map5_FullChrBuf + ( chrBank4k * 256 + *pbyNameTable ) * 64 + nYBit;
+      pPalTbl = &PalTable[ ( ( exByte >> 6 ) & 3 ) << 2 ];
+    }
+    else
+    {
+      pbyChrData = PPU_BG_Base + ( *pbyNameTable << 6 ) + nYBit;
+      pPalTbl = &PalTable[ ( ( ( pAttrBase[ nX >> 2 ] >> ( ( nX & 2 ) + nY4 ) ) & 3 ) << 2 ) ];
+    }
     for ( nIdx = 0; nIdx < PPU_Scr_H_Bit; ++nIdx )
     {
       pPoint[ nIdx ] = pPalTbl[ pbyChrData[ nIdx ] ];
