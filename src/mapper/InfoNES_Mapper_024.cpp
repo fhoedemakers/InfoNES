@@ -187,6 +187,8 @@ void Map24_Write( WORD wAddr, BYTE byData )
 
     case 0xF001:
       Map24_IRQ_State = byData & 0x03;
+      /* Acknowledge pending IRQ */
+      IRQ_State = IRQ_Wiring;
       if(Map24_IRQ_State & 0x02)
       {
         Map24_IRQ_Count = Map24_IRQ_Latch;
@@ -194,6 +196,8 @@ void Map24_Write( WORD wAddr, BYTE byData )
       break;
 
     case 0xF002:
+      /* Acknowledge pending IRQ */
+      IRQ_State = IRQ_Wiring;
       if(Map24_IRQ_State & 0x01)
       {
         Map24_IRQ_State |= 0x02;
