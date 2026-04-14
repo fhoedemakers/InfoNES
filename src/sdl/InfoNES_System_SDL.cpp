@@ -395,49 +395,84 @@ int InfoNES_Menu(){
 }
 
 /* Read ROM image file */
-int InfoNES_ReadRom( const char *pszFileName ){
-  FILE *fp;
+int InfoNES_ReadRom(const char *pszFileName) {
+  FILE *fp = fopen(pszFileName, "rb");
+  if (!fp) return -1;
 
-  /* Open ROM file */
-  fp=fopen(pszFileName,"rb");
-  if(fp==NULL) return -1;
-
-  /* Read ROM Header */
-  fread( &NesHeader, sizeof NesHeader, 1, fp );
-  if( memcmp( NesHeader.byID, "NES\x1a", 4 )!=0){
-    /* not .nes file */
-    fclose( fp );
+  // Get file size
+  fseek(fp, 0, SEEK_END);
+  long fileSize = ftell(fp);
+  fseek(fp, 0, SEEK_SET);
+  if (fileSize < sizeof(NesHeader)) {
+    fclose(fp);
     return -1;
   }
 
-  /* Clear SRAM */
-  memset( SRAM, 0, SRAM_SIZE );
+  // Allocate buffer for entire file
+  BYTE *nesFile = (BYTE *)malloc(fileSize);
+  if (!nesFile) {
+    fclose(fp);
+    return -1;
+  }
+  fread(nesFile, 1, fileSize, fp);
+  fclose(fp);
 
-  /* If trainer presents Read Triner at 0x7000-0x71ff */
-  if(NesHeader.byInfo1 & 4){
-    fread( &SRAM[ 0x1000 ], 512, 1, fp );
+  // Copy header
+  memcpy(&NesHeader, nesFile, sizeof(NesHeader));
+  // Check NES magic
+  if (memcmp(NesHeader.byID, "NES\x1a", 4) != 0) {
+    free(nesFile);
+    return -1;
   }
 
-  /* Allocate Memory for ROM Image */
-  ROM = (BYTE *)malloc( NesHeader.byRomSize * 0x4000 );
+  BYTE *ptr = nesFile + sizeof(NesHeader);
+  memset(SRAM, 0, SRAM_SIZE);
 
-  /* Read ROM Image */
-  fread( ROM, 0x4000, NesHeader.byRomSize, fp );
-
-  if(NesHeader.byVRomSize>0){
-    /* Allocate Memory for VROM Image */
-    VROM = (BYTE *)malloc( NesHeader.byVRomSize * 0x2000 );
-
-    /* Read VROM Image */
-    fread( VROM, 0x2000, NesHeader.byVRomSize, fp );
+  if (NesHeader.byInfo1 & 4) {
+    memcpy(&SRAM[0x1000], ptr, 512);
+    ptr += 512;
   }
 
-  /* File close */
-  fclose( fp );
+  long romSize = NesHeader.byRomSize * 0x4000;
+  long vromSize = NesHeader.byVRomSize * 0x2000;
 
-  /* Successful */
+  // ROM header fix: check for PRG/CHR overlap
+  if (romSize > 0 && vromSize > 0 && romSize > vromSize && fileSize >= (ptr - nesFile) + romSize) {
+    uint16_t resetVec = ptr[romSize - 4] | ((uint16_t)ptr[romSize - 3] << 8);
+    if (resetVec < 0x8000) {
+      long actualPrgSize = romSize - vromSize;
+      uint16_t fixedResetVec = ptr[actualPrgSize - 4] | ((uint16_t)ptr[actualPrgSize - 3] << 8);
+      if (fixedResetVec >= 0x8000) {
+        printf("ROM header fix: PRG %ldK -> %ldK, CHR found at PRG offset %ld\n",
+             romSize / 1024, actualPrgSize / 1024, actualPrgSize);
+        if (ROM) free(ROM);
+        if (VROM) free(VROM);
+        ROM = (BYTE *)malloc(actualPrgSize);
+        memcpy(ROM, ptr, actualPrgSize);
+        VROM = (BYTE *)malloc(vromSize);
+        memcpy(VROM, ptr + actualPrgSize, vromSize);
+        NesHeader.byRomSize = actualPrgSize / 0x4000;
+        free(nesFile);
+        return 0;
+      }
+    }
+  }
+
+  // Normal case
+  if (ROM) free(ROM);
+  ROM = (BYTE *)malloc(romSize);
+  memcpy(ROM, ptr, romSize);
+  ptr += romSize;
+
+  if (NesHeader.byVRomSize > 0) {
+    if (VROM) free(VROM);
+    VROM = (BYTE *)malloc(vromSize);
+    memcpy(VROM, ptr, vromSize);
+    ptr += vromSize;
+  }
+
+  free(nesFile);
   return 0;
-
 }
 
 /* Release a memory for ROM */
