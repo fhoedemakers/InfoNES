@@ -11,7 +11,7 @@
 
 // Type definition
 #ifndef DWORD
-typedef unsigned long  DWORD;
+typedef unsigned int  DWORD;
 #endif
 
 #ifndef WORD
