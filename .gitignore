@@ -1,6 +1,9 @@
 *Zone.Identifier
-*.nes
 fh.log
+*.nes
+*.fds
+*.wav
+*.nsf
 CMakePresets.json
 /pimoroni-pico/
 # Prerequisites
@@ -36,8 +39,10 @@ CMakePresets.json
 *.out
 *.app
 
-**/build
+**/build**
 .vscode
+bin/*
+*.srm
 
 # Apple filesystem cruft
 .DS_Store
