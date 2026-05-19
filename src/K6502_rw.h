@@ -363,7 +363,16 @@ static inline void K6502_Write( WORD wAddr, BYTE byData )
           break;
 
         case 0x14:  /* 0x4014 */
-          // Sprite DMA
+        // Sprite DMA
+        // On real NES, OAM DMA costs 513-514 CPU cycles (the CPU is halted
+        // while the DMA unit transfers 256 bytes). InfoNES previously charged
+        // 0 cycles, which caused the entire NMI handler (and any cycle-counted
+        // raster effects following it) to run ~4.5 scanlines too early. Rush'n
+        // Attack relies on a cycle-counted delay in its NMI handler to split
+        // the screen between a fixed HUD and a scrolling playfield; without
+        // the DMA penalty, the scroll change leaked into the last few lines
+        // of the HUD area.
+          g_wPassedClocks += 514;
           switch ( byData >> 5 )
           {
             case 0x0:  /* RAM */
